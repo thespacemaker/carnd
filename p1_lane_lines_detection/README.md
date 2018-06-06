@@ -1,102 +1,80 @@
-#**Finding Lane Lines on the Road** 
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+#**Finding Lane Lines on the Road**
 
-<img src="laneLines_thirdPass.jpg" width="480" alt="Combined Image" />
+##Writeup Template
 
-Overview
 ---
 
-When we drive, we use our eyes to decide where to go.  The lines on the road that show us where the lanes are act as our constant reference for where to steer the vehicle.  Naturally, one of the first things we would like to do in developing a self-driving car is to automatically detect lane lines using an algorithm.
+### Reflection
 
-In this project you will detect lane lines in images using Python and OpenCV.  OpenCV means "Open-Source Computer Vision", which is a package that has many useful tools for analyzing images.  
+###1. Describe your pipeline. As part of the description, explain how you modified the draw_lines() function.
 
-To complete the project, two files will be submitted: a file containing project code and a file containing a brief write up explaining your solution. We have included template files to be used both for the [code](https://github.com/udacity/CarND-LaneLines-P1/blob/master/P1.ipynb) and the [writeup](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md).The code file is called P1.ipynb and the writeup template is writeup_template.md 
+I approached this project under the idea that piggy-backing on another open-source projects would be better than trying to build a pipeline from scratch. After looking through a couple of github repos I settled on the one created by Kidra521
 
-To meet specifications in the project, take a look at the requirements in the [project rubric](https://review.udacity.com/#!/rubrics/322/view)
+I’ll outline his pipeline below and describe some of the changes I decided to implement in my fork in order to improve on his work.
+
+###Pipeline Steps
+####The pipeline consists of 4 steps
+1. Initialize variables and define classes used for deciding on candidate line segments. These lines are used to create both the left and right lane. There is also a decisions matrix declared as a means of identifying the stability of the lane. Interesting things to consider about line and lane classes
+	2. Lines are interpolated using a linear regression. There is the ability in the code to use polynomial expressions (I imagine this could be useful in the extra hard challenge video in order to better extrapolate the curves.)
+	3. The Vanishing point of both lane lines is solved with the function update_vanishing_point. This is later used to consider candidates of lines
+	4. Lines are a separate class and will be compiled into a lane line after found to be a good candidate using the Property “Candidate”. This property narrows down lines based on a few assumptions outlined in the comment.
+	~A simple domain logic to check whether this hough line can be a candidate for being a segment of a lane line.  
+	~	1. The line cannot be horizontal and should have a reasonable slope.
+		~2. The difference between lane line's slope and this hough line's cannot be too high.
+		~3. The hough line should not be far from the lane line it belongs to.
+		~4. The hough line should be below the vanishing point.
+	5. After proper candidates are chosen they are assigned to either lane with the assign_to_lane_line_fuction
+	6. A good module to also note is the stable/unstable rating assigned via “update_current_line_coeff. _ This function checks the lane each frame against a buffer (set as a variable Buffer Frames) and if the new frame exhibits a drastic change in slope compared to the buffer the lane state is changed to unstable. This has proven a vital function in checking the accuracy of the image pipeline.
+
+2. The next block outlines the image preprocessing functions
+	3. GIMP is used to convert to HSV. This was a major part of choosing this pipeline. By using HSV instead of greyscale, the ability to pull out yellow lane lines is greatly amplified. These thresholds are defined as
+		 '' WHITE_LINES = { 'low_th': gimp_to_opencv_hsv(0, 0, 80),
+		''                 'high_th': gimp_to_opencv_hsv(359, 10, 100) }
+		''
+		'' YELLOW_LINES = { 'low_th': gimp_to_opencv_hsv(35, 20, 30),
+		''                  'high_th': gimp_to_opencv_hsv(65, 100, 100),
+		''                  'kernel': np.ones((3,3),np.uint64)}
+
+	4. Hough transform is described in the code as
+'' A modified implementation of a suggested `hough_lines` function which allows Line objects initialization and in-place line filtering.Returns a list of Line instances which are considered segments of a lane.
+	5. The individual lines from the Hugh Transform are then compiled into a single lane and updated every frame
+6. The function imagePipeline() is the three phase function where all of the magic happens.
+	7. The first phase in the function calls all the preprocessing functions on the image. HSV, binary, mask, zeroing the pixels and applying canny functions are all applied in this phase
+	8. The lane lines are then updated with updateLane()
+	9. The final stage is drawing.
+		10. The first image Snapshot 1. This is the top left box in the final output and displays a simple masked binary image with the filtered lines drawn on top (filtered lines are the output of hough transform)
+		11. The second image is the small window to the right of the first and shows Canny edges with the Lane lines drawn in right and left colors (variables set at the beginning of the notebook). **I have added some text using CV.2puttext() in order to track the amount of times the lane line becomes unstable, This allows me to track how changing variables such as the length of buffer, white and yellow thresholds, and others will effect the final outcome. Before adding this functionality it was impossible to actually quantify performance.**
+		12. The final image is the large image. This is where the final lane lines are drawn with all the functions acting in the imagepipeline.
+	13. The final set of functions outline the drawing process as well as establish the canny, gaussian, and hough transform variables. This was interesting to me as, for the majority of the course so far, these were called much earlier in the program. But…. this works, so i’m not touching it :P The final function, weighted_img_ is compiles the output of hough_lines_ with the original image.
 
 
-Creating a Great Writeup
----
-For this project, a great writeup should provide a detailed response to the "Reflection" section of the [project rubric](https://review.udacity.com/#!/rubrics/322/view). There are three parts to the reflection:
-1. Describe the pipeline
-2. Identify any shortcomings
-3. Suggest possible improvements
-
-We encourage using images in your writeup to demonstrate how your pipeline works.  
-
-All that said, please be concise!  We're not looking for you to write a book here: just a brief description.
-
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup. Here is a link to a [writeup template file](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md). 
+###2. Identify potential shortcomings with your current pipeline
 
 
-The Project
----
+This pipeline really seems to work well. I’m glad to find the extra challenge video because it really outlines some of the areas where even a clever solution like this is sure to fail. In the curvy mountain roads there are very large shifts in light. This can be seen when the vehicle passes between tree coverage and the sun bleaches the road. This immediately causes the pipeline to fail. This can possibly be remedied by adjusting the white thresholds but honestly I cannot see it being improved too much without jeopardizing the pipeline in other light conditions. This is a tough problem and I do not think that visual imagining used alone is the best way to tackle it.
 
-## If you have already installed the [CarND Term1 Starter Kit](https://github.com/udacity/CarND-Term1-Starter-Kit/blob/master/README.md) you should be good to go!   If not, you can install the starter kit or follow the install instructions below to get started on this project. ##
+Other shortcomings, though not as dire, are worth noting
+1. By using the vanishing point and calculating slope we end up with a linear line that does not curve with the road. Some may argue that this doesn’t matter as the intended slope is more important than the curve but I would disagree in cases where the radius of the road is not constant. Using a non-linear function would most certainly perform better for predicative modeling and insuring the vehicles position in the lane
+2.  The hood lines have not been accounted for in the polygon mask. This is something I could fix but I imagine it will be addressable in further lessons. I will focus on continuing.
+3. I imagine this is an entirely different beast at night. Seeing how it handles road lines in the dark is something that needs to be tested
+4. If it snows…. good luck
 
-**Step 1:** Getting setup with Python
 
-To do this project, you will need Python 3 along with the numpy, matplotlib, and OpenCV libraries, as well as Jupyter Notebook installed. 
 
-We recommend downloading and installing the Anaconda Python 3 distribution from Continuum Analytics because it comes prepackaged with many of the Python dependencies you will need for this and future projects, makes it easy to install OpenCV, and includes Jupyter Notebook.  Beyond that, it is one of the most common Python distributions used in data analytics and machine learning, so a great choice if you're getting started in the field.
 
-Choose the appropriate Python 3 Anaconda install package for your operating system <A HREF="https://www.continuum.io/downloads" target="_blank">here</A>.   Download and install the package.
+###3. Suggest possible improvements to your pipeline
 
-If you already have Anaconda for Python 2 installed, you can create a separate environment for Python 3 and all the appropriate dependencies with the following command:
+1. Using a non-linear function would definitely help give a more accurate representation of the lane lines
+2. Change the polygon mask to cut out the hood lines.
+3. I really like the birds-eye view approach I have found while researching online. Using the moving boxes and birds-eye would significantly help in tracking the curves.
+4. I cannot help but feel like some type of filter on the camera could prevent drastic changes in light to affect the pipeline as it does in the extra challenge.
+5. Another way to approach the problem in number 4 could be to apply some contrast preprocessing to try and even out some of the precipitous changes in light. How this would affect the white thresholds however would also have to be tested
+6. I think the vanishing point solution is really only a temporary solution. It fails to track the curve of the road and certainly does not illustrate where the final vanishing point down the road is. Non-linearity will have to be implemented to solve this
+7. Adding test images taken at night time would definitely be a way to test more conditions, same applies to weather
+8. I think tracking the horizon is an interesting though. Especially on hilly roads, the horizon would have to dynamically update in order to update the vanishing point appropriately as well as compensate for any distortion in lane lines.
+9. implemented some time of metrics for tracking distances would be useful for more elaborate computations. I believe this is something that we will address in later lessons.
+10. There are many more but I’ll close with this one. There is a risk, in scenarios with curbs and other delineating structures where the image pipeline can confuse the edge of the road or barrier as the lane line. This is very obvious with the extra hard challenge where the grass edge is repeatedly mistaken for the lane line. I think adding sensors and the incorporation of lira is really important in tackling this challenge. Understanding where the road edges are in a spatial manner will play a key role in narrowing down what is a lane line and what is simply an edge that follows along in a parallel path.
 
-`>  conda create --name=yourNewEnvironment python=3 anaconda`
+###Thank you so much for taking the time to read this. I have absolutely enjoyed this course so far and cannot thank you enough for helping me through this exciting endeavor! Cheers!
 
-`>  source activate yourNewEnvironment`
-
-**Step 2:** Installing OpenCV
-
-Once you have Anaconda installed, first double check you are in your Python 3 environment:
-
-`>python`    
-`Python 3.5.2 |Anaconda 4.1.1 (x86_64)| (default, Jul  2 2016, 17:52:12)`  
-`[GCC 4.2.1 Compatible Apple LLVM 4.2 (clang-425.0.28)] on darwin`  
-`Type "help", "copyright", "credits" or "license" for more information.`  
-`>>>`   
-(Ctrl-d to exit Python)
-
-run the following commands at the terminal prompt to get OpenCV:
-
-`> pip install pillow`  
-`> conda install -c menpo opencv3=3.1.0`
-
-then to test if OpenCV is installed correctly:
-
-`> python`  
-`>>> import cv2`  
-`>>>`  (i.e. did not get an ImportError)
-
-(Ctrl-d to exit Python)
-
-**Step 3:** Installing moviepy  
-
-We recommend the "moviepy" package for processing video in this project (though you're welcome to use other packages if you prefer).  
-
-To install moviepy run:
-
-`>pip install moviepy`  
-
-and check that the install worked:
-
-`>python`  
-`>>>import moviepy`  
-`>>>`  (i.e. did not get an ImportError)
-
-(Ctrl-d to exit Python)
-
-**Step 4:** Opening the code in a Jupyter Notebook
-
-You will complete this project in a Jupyter notebook.  If you are unfamiliar with Jupyter Notebooks, check out <A HREF="https://www.packtpub.com/books/content/basics-jupyter-notebook-and-python" target="_blank">Cyrille Rossant's Basics of Jupyter Notebook and Python</A> to get started.
-
-Jupyter is an ipython notebook where you can run blocks of code and see results interactively.  All the code for this project is contained in a Jupyter notebook. To start Jupyter in your browser, run the following command at the terminal prompt (be sure you're in your Python 3 environment!):
-
-`> jupyter notebook`
-
-A browser window will appear showing the contents of the current directory.  Click on the file called "P1.ipynb".  Another browser window will appear displaying the notebook.  Follow the instructions in the notebook to complete the project.  
-
-**Step 5:** Complete the project and submit both the Ipython notebook and the project writeup
-
+Adnan E. Chahbandar
